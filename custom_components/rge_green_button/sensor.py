@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -198,20 +198,31 @@ class RGESensor(SensorEntity):
         """
         Write hourly readings as long-term statistics into the recorder.
 
-        Fetches the last existing sum from the DB before our earliest row
-        to ensure the cumulative sum is always continuous across imports.
+        Finds the correct cumulative sum baseline by looking up the last
+        recorded stat strictly BEFORE our earliest new row. This handles
+        three cases correctly:
+          1. Clean append   — new data starts after all existing stats
+          2. Overlap/re-import — new data overlaps existing stats;
+                                 find pre-overlap sum as baseline so
+                                 async_import_statistics overwrites the
+                                 overlapping rows with correct sums
+          3. First import   — no existing stats; baseline = 0
         """
         if not result.hourly_readings:
             _LOGGER.warning("[%s] No hourly readings to import.", self._attr_name)
             return
 
-        from homeassistant.components.recorder.statistics import get_last_statistics
+        from homeassistant.components.recorder.statistics import (
+            get_last_statistics,
+            statistics_during_period,
+        )
         from homeassistant.components.recorder.models import StatisticMeanType
+        from homeassistant.util.dt import utc_from_timestamp
 
         sorted_readings = sorted(result.hourly_readings)
         earliest_dt = sorted_readings[0][0]
 
-        # Get the last recorded statistic to use as sum baseline
+        # Step 1: get the overall last stat to detect overlap
         last_stats = await get_instance(self.hass).async_add_executor_job(
             get_last_statistics,
             self.hass,
@@ -222,17 +233,64 @@ class RGESensor(SensorEntity):
         )
 
         running_sum = 0.0
+
         if last_stats and self.entity_id in last_stats:
             last = last_stats[self.entity_id][0]
             last_start = datetime.fromtimestamp(float(last["start"]), tz=timezone.utc)
-            if last_start < earliest_dt:
-                running_sum = float(last.get("sum") or 0.0)
-                _LOGGER.debug("[%s] Baseline sum=%.4f from %s", self._attr_name, running_sum, last_start)
-            else:
-                running_sum = 0.0
-                _LOGGER.debug("[%s] Overlap — recalculating from 0", self._attr_name)
 
-        # StatisticData is a TypedDict in HA 2025+ — use dict syntax, not attributes
+            if last_start < earliest_dt:
+                # Clean append — use last sum directly as baseline
+                running_sum = float(last.get("sum") or 0.0)
+                _LOGGER.debug(
+                    "[%s] Clean append — baseline sum=%.4f from %s",
+                    self._attr_name, running_sum, last_start,
+                )
+            else:
+                # Overlap detected — find the last stat strictly before
+                # earliest_dt to use as the pre-overlap baseline sum.
+                # We query a 2-hour window ending at earliest_dt.
+                window_start = earliest_dt - timedelta(hours=2)
+                window_end = earliest_dt
+
+                pre_stats = await get_instance(self.hass).async_add_executor_job(
+                    statistics_during_period,
+                    self.hass,
+                    window_start,
+                    window_end,
+                    {self.entity_id},
+                    "hour",
+                    None,
+                    {"sum"},
+                )
+
+                if pre_stats and self.entity_id in pre_stats:
+                    # Get the last entry in the window (closest to earliest_dt)
+                    pre_list = pre_stats[self.entity_id]
+                    # Filter to only rows strictly before earliest_dt
+                    before = [
+                        r for r in pre_list
+                        if datetime.fromtimestamp(float(r["start"]), tz=timezone.utc) < earliest_dt
+                    ]
+                    if before:
+                        running_sum = float(before[-1].get("sum") or 0.0)
+                        _LOGGER.debug(
+                            "[%s] Overlap — pre-overlap baseline sum=%.4f",
+                            self._attr_name, running_sum,
+                        )
+                    else:
+                        running_sum = 0.0
+                        _LOGGER.debug(
+                            "[%s] Overlap — no pre-overlap stat found, using 0",
+                            self._attr_name,
+                        )
+                else:
+                    running_sum = 0.0
+                    _LOGGER.debug(
+                        "[%s] Overlap — no pre-overlap stats in window, using 0",
+                        self._attr_name,
+                    )
+
+        # Build statistic rows with correct cumulative sums
         statistic_data: list[StatisticData] = []
         for dt_utc, usage in sorted_readings:
             running_sum = round(running_sum + usage, 6)
@@ -242,7 +300,10 @@ class RGESensor(SensorEntity):
                 "sum": running_sum,
             })
 
-        # StatisticMetaData is also a TypedDict
+        # StatisticMetaData — use mean_type and unit_class for HA 2026.11+
+        # unit_class values derived from STATISTIC_UNIT_TO_UNIT_CONVERTER:
+        #   kWh -> 'energy',  CCF -> 'volume'
+        unit_class = "energy" if self._attr_native_unit_of_measurement == "kWh" else "volume"
         metadata: StatisticMetaData = {
             "has_mean": False,
             "mean_type": StatisticMeanType.NONE,
@@ -250,6 +311,7 @@ class RGESensor(SensorEntity):
             "name": self._attr_name,
             "source": "recorder",
             "statistic_id": self.entity_id,
+            "unit_class": unit_class,
             "unit_of_measurement": self._attr_native_unit_of_measurement,
         }
 
