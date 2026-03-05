@@ -119,7 +119,15 @@ docker compose restart homeassistant
 # or via UI: Settings → System → Restart
 ```
 
-On first start the integration automatically copies the panel JavaScript file to `config/www/green_button_energy/` so it can be served by HA's built-in web server.
+On first start the integration automatically copies the panel JavaScript file to `config/www/green_button_energy/` so it can be served by HA's built-in web server. If the sidebar panel fails to load after restart, copy it manually:
+
+```bash
+mkdir -p /config/www/green_button_energy
+cp /config/custom_components/green_button_energy/frontend/green-button-energy-panel.js \
+   /config/www/green_button_energy/
+```
+
+Then do a hard browser refresh (**Ctrl+Shift+R** / **Cmd+Shift+R**) — no restart needed.
 
 ### Step 3 — Add the Integration
 
