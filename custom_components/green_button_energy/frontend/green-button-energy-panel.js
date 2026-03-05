@@ -466,4 +466,4 @@ class GreenButtonEnergyPanel extends HTMLElement {
   }
 }
 
-customElements.define("green-button-energy-panel", RgeGreenButtonPanel);
+customElements.define("green-button-energy-panel", GreenButtonEnergyPanel);
