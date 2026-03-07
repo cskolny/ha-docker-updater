@@ -94,7 +94,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
         hass,
         webcomponent_name="green-button-energy-panel",  # Matches customElements.define()
         frontend_url_path=DOMAIN,                       # Sidebar URL: /green_button_energy
-        sidebar_title="Green Button Import",
+        sidebar_title="Energy Import",
         sidebar_icon="mdi:lightning-bolt-circle",
         module_url=f"{_PANEL_URL}/{_PANEL_JS}",
         embed_iframe=False,

@@ -1,16 +1,18 @@
 /**
- * RG&E Green Button Import Panel
+ * Green Button Energy Import Panel
  *
  * A custom Home Assistant sidebar panel that provides drag-and-drop
- * file import for RG&E Green Button CSV and XML exports.
+ * file import for Avangrid Green Button CSV and XML exports.
  *
  * Architecture:
  *   - Runs entirely in the browser as a native Web Component
- *   - Reads the dropped file as base64 in the browser
+ *   - Reads the dropped file as UTF-8 text in the browser
  *   - Sends content over the existing HA WebSocket connection
  *     using hass.connection.sendMessagePromise (no extra auth needed)
  *   - Backend WebSocket handler parses the file in memory and
  *     updates the sensors directly — no filesystem access required
+ *
+ * @version 1.0.2
  */
 
 class GreenButtonEnergyPanel extends HTMLElement {
@@ -231,7 +233,7 @@ class GreenButtonEnergyPanel extends HTMLElement {
       <div class="page">
         <h1>
           <ha-icon icon="mdi:lightning-bolt-circle"></ha-icon>
-          Green Button Energy Import
+          Energy Import
         </h1>
         <p class="subtitle">
           Download your usage data from <strong>your utility website → My Energy Use → Download Data</strong>,
