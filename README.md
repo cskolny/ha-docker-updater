@@ -2,6 +2,8 @@
 
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.1%2B-blue?logo=homeassistant)](https://www.home-assistant.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![Release](https://img.shields.io/github/v/release/cskolny/ha-green-button-energy)](https://github.com/cskolny/ha-green-button-energy/releases)
 
 Import your **Avangrid utility** smart meter usage data directly into the [Home Assistant Energy Dashboard](https://www.home-assistant.io/docs/energy/) via a drag-and-drop sidebar panel. Supports both **electric** (kWh) and **gas** (CCF/therms) usage from Green Button CSV and XML exports.
 
@@ -53,7 +55,7 @@ Both sensors are automatically available in **Settings → Energy** for the Elec
 
 - Home Assistant **2025.1 or later** (tested on 2026.3)
 - An Avangrid utility account with smart meter data and Green Button export access
-- SSH or file access to your HA config directory (for initial install only)
+- File access to your HA config directory (for initial install only)
 
 ---
 
@@ -86,13 +88,15 @@ Both sensors are automatically available in **Settings → Energy** for the Elec
    └── strings.json
    ```
 
-### HACS (coming soon)
+### HACS
 
-This integration is not yet in the HACS default store. You can add it as a custom repository:
+**Custom repository (available now):**
 
 1. In HACS → Integrations → three-dot menu → **Custom repositories**
 2. Add `https://github.com/cskolny/ha-green-button-energy` with category **Integration**
 3. Search for "Green Button Energy Import" and install
+
+**Default HACS store:** Submission pending. Once approved, you will be able to find and install this integration by searching for "Green Button Energy Import" directly in HACS without adding a custom repository.
 
 ---
 
@@ -252,40 +256,7 @@ When you import a historical file on a day when HA has already recorded live sen
 
 ### File Size Limit
 
-Files larger than **10 MB** are rejected before any processing occurs. Green Button exports for a full year of hourly data are typically well under 2 MB. The limit exists to protect against memory pressure on the Raspberry Pi.
-
----
-
-## Development & Deployment
-
-### Infrastructure
-
-| Component | Value |
-|-----------|-------|
-| Dev machine | macOS (VSCode) |
-| Target | Raspberry Pi 4 running HA in Docker |
-| HA config path | `/home/pi/homeassistant/config/` |
-| Integration path | `/home/pi/homeassistant/config/custom_components/green_button_energy/` |
-| Storage file | `/home/pi/homeassistant/config/.storage/green_button_energy_data` |
-
-### Deploying Changes
-
-A `deploy.sh` script handles the full deploy cycle from your Mac to the Pi:
-
-```bash
-./deploy.sh              # deploy and restart HA
-./deploy.sh --skip-restart   # deploy without restarting (JS-only changes)
-```
-
-The script:
-1. Ensures the `custom_components` directory is owned by `pi` (fixes Docker root-ownership issues)
-2. rsyncs all integration files to the Pi, excluding `__pycache__`, `*.pyc`, and `.DS_Store`
-3. Stamps `manifest.json` with the current git SHA so HA always reloads the integration cleanly
-4. Restarts HA via `docker compose restart homeassistant`
-5. Polls `http://localhost:8123/api/` until HA responds with HTTP 200 or 401 (both indicate HA is up), with a 120-second timeout
-6. Prints the git SHA and a browser hard-refresh reminder
-
-> **Note:** The deploy script reads the current git SHA for labeling but does **not** commit or push to GitHub. Committing is always a deliberate manual step.
+Files larger than **10 MB** are rejected before any processing occurs. Green Button exports for a full year of hourly data are typically well under 2 MB. The limit protects against memory pressure from oversized or malformed uploads.
 
 ---
 
@@ -336,14 +307,6 @@ ls /config/custom_components/
 # Should show: green_button_energy
 ```
 
-### Deploy script permission error
-If `rsync` fails with a permission error, the `custom_components` directory may be owned by root from a previous Docker run. The deploy script automatically runs `sudo chown -R pi:pi` on the `custom_components` directory before syncing to fix this.
-
-### Deploy script health check times out
-HA 2026.x returns HTTP 401 from `/api/` when no auth token is provided. The deploy script accepts both 200 and 401 as healthy responses. If it still times out, HA may be taking longer than 120 seconds — check the Pi logs directly:
-```bash
-ssh pi@homeassistant.local 'cd /home/pi/homeassistant && docker compose logs --tail=50 homeassistant'
-```
 
 ---
 
