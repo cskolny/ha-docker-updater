@@ -1,0 +1,69 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "HA Docker Updater — Setup",
+        "description": "Configure how this integration communicates with your Docker host.\n\n**Important:** The trigger file path must be inside a directory that is volume-mounted from the host into the HA container. See [setup guide]({docs_url}) for details.\n\nDefault trigger path: `{default_trigger}`",
+        "data": {
+          "compose_dir": "Docker Compose directory (host path)",
+          "compose_file": "Docker Compose filename",
+          "ha_service_name": "Home Assistant service name in Compose",
+          "trigger_file_path": "Trigger file path (container-side volume mount)",
+          "prune_images": "Remove unused Docker images after update",
+          "scan_interval": "Version check interval (seconds)"
+        },
+        "data_description": {
+          "compose_dir": "Absolute path on the **host** to the directory containing your docker-compose file, e.g. `/home/pi/homeassistant`",
+          "compose_file": "Filename of your Compose file, typically `docker-compose.yml`",
+          "ha_service_name": "The service name for Home Assistant in your Compose file, typically `homeassistant`",
+          "trigger_file_path": "Path inside the container that maps to a host-writable location. The host watcher monitors this file.",
+          "prune_images": "Runs `docker image prune -af` after a successful update to reclaim disk space",
+          "scan_interval": "How often to check GitHub for a new release. Minimum 300 s (5 min), maximum 86400 s (24 h). Default: 3600 s (1 h)"
+        }
+      }
+    },
+    "error": {
+      "trigger_dir_not_found": "The directory for the trigger file path does not exist inside the container. Ensure the path is inside a volume-mounted directory.",
+      "trigger_dir_not_writable": "The trigger file directory exists but is not writable. Check volume mount permissions.",
+      "cannot_connect": "Unable to reach the GitHub API. Check your network connection.",
+      "unknown": "An unexpected error occurred. Check the Home Assistant logs for details."
+    },
+    "abort": {
+      "already_configured": "HA Docker Updater is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HA Docker Updater — Options",
+        "data": {
+          "compose_dir": "Docker Compose directory (host path)",
+          "compose_file": "Docker Compose filename",
+          "ha_service_name": "Home Assistant service name in Compose",
+          "trigger_file_path": "Trigger file path (container-side volume mount)",
+          "prune_images": "Remove unused Docker images after update",
+          "scan_interval": "Version check interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "trigger_dir_not_found": "The directory for the trigger file path does not exist inside the container.",
+      "trigger_dir_not_writable": "The trigger file directory is not writable inside the container."
+    }
+  },
+  "entity": {
+    "update": {
+      "ha_docker_update": {
+        "name": "HA Docker Update",
+        "state_attributes": {
+          "github_rate_limit_remaining": {
+            "name": "GitHub API rate limit remaining"
+          },
+          "trigger_file_path": {
+            "name": "Trigger file path"
+          }
+        }
+      }
+    }
+  }
+}
