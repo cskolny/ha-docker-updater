@@ -9,12 +9,12 @@ Responsible for:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 from typing import Any
 
 import aiohttp
-from packaging.version import Version, InvalidVersion
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import __version__ as HA_VERSION
@@ -35,15 +35,16 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def _parse_version(version_str: str) -> Version | None:
-    """Safely parse a CalVer/SemVer string, stripping a leading 'v' if present.
+def _parse_version(version_str: str) -> tuple[int, ...] | None:
+    """Parse a HA CalVer string (e.g. '2026.3.1') into a comparable tuple.
 
-    Returns None if the string cannot be parsed rather than raising.
+    Strips a leading 'v' if present.  Returns None if parsing fails so callers
+    can fall back gracefully rather than raising.
     """
     cleaned = version_str.strip().lstrip("v")
     try:
-        return Version(cleaned)
-    except InvalidVersion:
+        return tuple(int(x) for x in cleaned.split("."))
+    except ValueError:
         _LOGGER.warning("%s Could not parse version string: %r", LOG_PREFIX, version_str)
         return None
 
@@ -51,13 +52,13 @@ def _parse_version(version_str: str) -> Version | None:
 def _is_update_available(installed: str, latest: str) -> bool:
     """Return True only when *latest* is strictly newer than *installed*.
 
-    Falls back to string inequality if either version cannot be parsed, which
-    avoids a false-positive 'update available' on parse failures.
+    Uses tuple comparison of integer version parts, which correctly handles
+    HA's CalVer scheme (YYYY.M.patch).  Falls back to string inequality on
+    parse failure to avoid false positives.
     """
     installed_v = _parse_version(installed)
     latest_v = _parse_version(latest)
     if installed_v is None or latest_v is None:
-        # Safe fallback — only flag as update if strings differ
         return installed.lstrip("v") != latest.lstrip("v")
     return latest_v > installed_v
 
@@ -99,44 +100,44 @@ class HADockerUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         installed = HA_VERSION.lstrip("v")
 
         try:
-            async with session.get(
-                REPO_API_URL,
-                timeout=aiohttp.ClientTimeout(total=GITHUB_TIMEOUT),
-                headers={"Accept": "application/vnd.github+json"},
-            ) as resp:
-                rate_remaining: int | None = None
-                raw_rate = resp.headers.get(GITHUB_RATE_LIMIT_HEADER)
-                if raw_rate is not None:
-                    try:
-                        rate_remaining = int(raw_rate)
-                    except ValueError:
-                        pass
+            async with asyncio.timeout(GITHUB_TIMEOUT):
+                async with session.get(
+                    REPO_API_URL,
+                    headers={"Accept": "application/vnd.github+json"},
+                ) as resp:
+                    rate_remaining: int | None = None
+                    raw_rate = resp.headers.get(GITHUB_RATE_LIMIT_HEADER)
+                    if raw_rate is not None:
+                        try:
+                            rate_remaining = int(raw_rate)
+                        except ValueError:
+                            pass
 
-                if rate_remaining is not None and rate_remaining < 5:
-                    _LOGGER.warning(
-                        "%s GitHub API rate limit nearly exhausted (%s remaining). "
-                        "Returning cached data.",
-                        LOG_PREFIX,
-                        rate_remaining,
-                    )
-                    # Return stale data rather than an error to keep entity available
-                    if self.data:
-                        return {**self.data, "rate_limit_remaining": rate_remaining}
+                    if rate_remaining is not None and rate_remaining < 5:
+                        _LOGGER.warning(
+                            "%s GitHub API rate limit nearly exhausted (%s remaining). "
+                            "Returning cached data.",
+                            LOG_PREFIX,
+                            rate_remaining,
+                        )
+                        # Return stale data rather than an error to keep entity available
+                        if self.data:
+                            return {**self.data, "rate_limit_remaining": rate_remaining}
 
-                if resp.status == 403:
-                    raise UpdateFailed(
-                        f"{LOG_PREFIX} GitHub API rate limited (HTTP 403). "
-                        "Will retry at next scheduled interval."
-                    )
+                    if resp.status == 403:
+                        raise UpdateFailed(
+                            f"{LOG_PREFIX} GitHub API rate limited (HTTP 403). "
+                            "Will retry at next scheduled interval."
+                        )
 
-                if resp.status != 200:
-                    raise UpdateFailed(
-                        f"{LOG_PREFIX} GitHub API returned unexpected status {resp.status}."
-                    )
+                    if resp.status != 200:
+                        raise UpdateFailed(
+                            f"{LOG_PREFIX} GitHub API returned unexpected status {resp.status}."
+                        )
 
-                payload: dict[str, Any] = await resp.json()
+                    payload: dict[str, Any] = await resp.json()
 
-        except aiohttp.ClientError as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
             raise UpdateFailed(
                 f"{LOG_PREFIX} Network error fetching GitHub release: {exc}"
             ) from exc

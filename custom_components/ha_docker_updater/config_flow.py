@@ -22,8 +22,8 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
-from homeassistant.data_entry_flow import FlowResult
 
 from .const import (
     CONF_COMPOSE_DIR,
@@ -102,7 +102,7 @@ class HADockerUpdaterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Display and process the user setup form."""
         # Prevent duplicate entries
         await self.async_set_unique_id(DOMAIN)
@@ -151,17 +151,16 @@ class HADockerUpdaterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class HADockerUpdaterOptionsFlow(config_entries.OptionsFlow):
     """Allow the user to adjust settings after initial setup."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self._config_entry = config_entry
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         """Display and process the options form."""
         errors: dict[str, str] = {}
 
-        # Merge current options on top of original data so all fields populate
-        current = {**self._config_entry.data, **self._config_entry.options}
+        # Merge current options on top of original data so all fields populate.
+        # self.config_entry is provided by the OptionsFlow base class — do NOT
+        # store it manually in __init__ as that is deprecated since HA 2025.12.
+        current = {**self.config_entry.data, **self.config_entry.options}
 
         if user_input is not None:
             trigger_error = await self.hass.async_add_executor_job(

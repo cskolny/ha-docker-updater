@@ -1,6 +1,6 @@
 {
-  "name": "Green Button Energy Import",
-  "domains": ["sensor"],
-  "iot_class": "local_push",
-  "homeassistant": "2025.1.0"
+  "name": "HA Docker Updater",
+  "domains": ["update"],
+  "iot_class": "cloud_polling",
+  "homeassistant": "2025.12.0"
 }

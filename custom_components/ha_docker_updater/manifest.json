@@ -5,7 +5,7 @@
   "documentation": "https://github.com/cskolny/ha-docker-updater",
   "issue_tracker": "https://github.com/cskolny/ha-docker-updater/issues",
   "codeowners": ["@cskolny"],
-  "requirements": ["packaging>=21.0"],
+  "requirements": [],
   "dependencies": [],
   "after_dependencies": [],
   "iot_class": "cloud_polling",
