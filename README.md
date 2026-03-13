@@ -1,12 +1,17 @@
-# HA Docker Updater
+# HA Docker Updater — Home Assistant Custom Integration
 
-A production-grade Home Assistant custom component that enables one-click updates of your Home Assistant Docker container directly from the HA UI — without SSH, without manual docker-compose commands, and without ever leaving Home Assistant.
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.12%2B-blue?logo=homeassistant)](https://www.home-assistant.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
+[![Release](https://img.shields.io/github/v/release/cskolny/ha-docker-updater)](https://github.com/cskolny/ha-docker-updater/releases)
+
+Update your **Home Assistant Docker container** directly from the HA UI — no SSH, no terminal, no manual `docker compose` commands. A new update entity appears in **Settings → System → Updates** alongside HA's own built-in update cards.
 
 ---
 
-## Architecture
+## How It Works
 
-This integration uses a **two-part design** to safely update a running Docker container — something a container cannot do to itself.
+A container cannot restart itself — any script running inside the container is killed the moment `docker compose up --force-recreate` replaces it. This integration solves that fundamental problem with a **two-part design**:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -25,7 +30,7 @@ This integration uses a **two-part design** to safely update a running Docker co
 │                                       ▼                        │
 │  /tmp/ha-docker-updater-trigger  ◄─────┘                       │
 │           │                                                     │
-│           │  (inotify poll every 5s)                           │
+│           │  (poll every 5s)                                   │
 │           ▼                                                     │
 │  ha-docker-updater-watcher.sh (systemd service)                 │
 │    1. Validates magic string                                    │
@@ -38,20 +43,36 @@ This integration uses a **two-part design** to safely update a running Docker co
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Why two parts?
+**Part 1 — HA custom component** (runs inside the container): polls GitHub for the latest HA release, compares it against the running version, and writes a trigger file to a volume-mounted path when you click **Install**.
 
-When `docker compose up --force-recreate` runs, it **stops and replaces the running container**. Any script running *inside* that container is killed mid-execution — the update can never complete. The host-side watcher runs outside the container and is unaffected by the container restart.
+**Part 2 — Host-side watcher** (runs as a systemd service on the Docker host): monitors the trigger file, validates it, then runs `docker compose pull` and `docker compose up -d --force-recreate` — safely outside the container.
 
 ---
 
-## Prerequisites
+## Features
 
-| Requirement | Notes |
-|---|---|
-| Home Assistant in Docker | Installed via `docker-compose` or `docker compose` |
-| Docker Compose v1 or v2 | Both supported; v2 preferred |
-| Raspberry Pi OS / Debian / Ubuntu | Any systemd-based Linux host |
-| Python `packaging` library | Installed automatically by HA from `manifest.json` |
+- 🔄 **One-click updates** from Settings → System → Updates
+- 💾 **Optional automatic backup** before each update
+- 🔍 **GitHub release polling** with configurable interval (5 min – 24 hr)
+- 🛡️ **GitHub API rate-limit awareness** — returns cached data instead of erroring when the limit is nearly exhausted
+- ⚡ **Atomic trigger file writes** — write-then-rename so the watcher never sees a partial file
+- 🔒 **Magic string validation** — the watcher ignores stray or empty files
+- 🔐 **Lock file** prevents concurrent update runs
+- 🐳 **Docker Compose v1 and v2** both supported; v2 preferred
+- 🗑️ **Optional image pruning** after a successful update to reclaim disk space
+- ⚙️ **Full config flow** — set up entirely from the UI, no `configuration.yaml` changes
+- 🔧 **Options flow** — adjust all settings post-setup without re-adding the integration
+- 📋 **Structured timestamped logging** on both the HA component and host-side scripts
+- 🚀 **`deploy.sh`** — one-command deployment to your Raspberry Pi
+
+---
+
+## Requirements
+
+- Home Assistant running in Docker (via `docker-compose` or `docker compose`)
+- Docker Compose v1 or v2 (v2 preferred)
+- A systemd-based Linux host (Raspberry Pi OS, Debian, Ubuntu)
+- Home Assistant **2025.12 or later**
 
 ---
 
@@ -59,7 +80,9 @@ When `docker compose up --force-recreate` runs, it **stops and replaces the runn
 
 ### Part 1 — HA Custom Component
 
-1. Copy the `custom_components/ha_docker_updater/` folder into your HA `config/custom_components/` directory:
+**Manual:**
+
+1. Copy the `custom_components/ha_docker_updater/` folder into your HA config directory:
    ```
    config/
    └── custom_components/
@@ -85,29 +108,38 @@ When `docker compose up --force-recreate` runs, it **stops and replaces the runn
          - /tmp:/tmp          # ← Shares /tmp with the host for the trigger file
          - /etc/localtime:/etc/localtime:ro
    ```
-   > **Security note:** Mounting `/tmp` is the simplest option. For a more restrictive setup, create a dedicated directory (e.g., `/home/pi/ha_ipc`) and mount that instead, then set your trigger file path accordingly.
+   > **Security note:** Mounting `/tmp` is the simplest option. For a more restrictive setup, create a dedicated directory (e.g., `/home/pi/ha_ipc`) and mount that instead, then set your trigger file path accordingly in the HA setup form.
 
 3. Restart Home Assistant.
 
-4. In HA: **Settings → Devices & Services → Add Integration → HA Docker Updater**
+4. Go to **Settings → Devices & Services → Add Integration → HA Docker Updater**
 
 5. Fill in the setup form:
-   - **Docker Compose directory**: `/home/pi/homeassistant`
-   - **Compose filename**: `docker-compose.yml`
-   - **HA service name**: `homeassistant`
-   - **Trigger file path**: `/tmp/ha-docker-updater-trigger`
-   - **Prune images**: Enabled (recommended)
-   - **Scan interval**: `3600` (1 hour)
+
+   | Field | Default | Description |
+   |---|---|---|
+   | Docker Compose directory | `/home/pi/homeassistant` | Host-side path to your Compose project |
+   | Compose filename | `docker-compose.yml` | Filename of your Compose file |
+   | HA service name | `homeassistant` | Service name in the Compose file |
+   | Trigger file path | `/tmp/ha-docker-updater-trigger` | Must be inside a volume-mounted directory |
+   | Prune images | Enabled | Removes old images after update |
+   | Scan interval | `3600` | Seconds between GitHub version checks |
+
+**HACS (Custom repository):**
+
+1. In HACS → Integrations → three-dot menu → **Custom repositories**
+2. Add `https://github.com/cskolny/ha-docker-updater` with category **Integration**
+3. Search for "HA Docker Updater" and install
 
 ---
 
 ### Part 2 — Host-side Watcher (systemd service)
 
-Run these commands on your **Raspberry Pi / Docker host** (not inside the container):
+Run these commands on your **Raspberry Pi / Docker host** — not inside the container:
 
 ```bash
 # 1. Copy scripts to system bin
-sudo cp host/ha-docker-updater.sh         /usr/local/bin/
+sudo cp host/ha-docker-updater.sh          /usr/local/bin/
 sudo cp host/ha-docker-updater-watcher.sh  /usr/local/bin/
 sudo chmod +x /usr/local/bin/ha-docker-updater.sh
 sudo chmod +x /usr/local/bin/ha-docker-updater-watcher.sh
@@ -128,18 +160,20 @@ sudo systemctl status ha-docker-updater-watcher.service
 journalctl -u ha-docker-updater-watcher.service -f
 ```
 
+> **Tip:** The `deploy.sh` script in the repository automates both parts — it rsyncs the HA component to your Pi and installs the host scripts and systemd service in one command. Run `./deploy.sh --help` for options.
+
 ---
 
 ## Usage
 
-Once both parts are installed, a new **HA Docker Update** entity appears in your update dashboard (`Settings → System → Updates`).
+Once both parts are installed, a **Home Assistant Core Update** entity appears in **Settings → System → Updates**.
 
 | State | Meaning |
 |---|---|
-| **Up to date** | Installed version matches latest GitHub release |
+| **Up to date** | Installed version matches the latest GitHub release |
 | **Update available** | A newer version is available — click **Install** |
-| **Updating** | Trigger file has been written; watcher is running |
-| **Unavailable** | GitHub API unreachable; will retry next interval |
+| **Installing** | Trigger file written; host watcher is running the update |
+| **Unavailable** | GitHub API unreachable; will retry at the next interval |
 
 ### Automations
 
@@ -150,12 +184,12 @@ automation:
   alias: "Auto-update HA Docker when update available"
   trigger:
     - platform: state
-      entity_id: update.ha_docker_update
+      entity_id: update.home_assistant_core_update
       to: "on"
   action:
-    - service: update.install
+    - action: update.install
       target:
-        entity_id: update.ha_docker_update
+        entity_id: update.home_assistant_core_update
 ```
 
 ---
@@ -166,11 +200,11 @@ All options are adjustable post-setup via **Settings → Devices & Services → 
 
 | Option | Default | Description |
 |---|---|---|
-| `compose_dir` | `/home/pi/homeassistant` | Host-side directory with your `docker-compose.yml` |
+| `compose_dir` | `/home/pi/homeassistant` | Host-side directory containing your `docker-compose.yml` |
 | `compose_file` | `docker-compose.yml` | Compose filename |
-| `ha_service_name` | `homeassistant` | Service name in the Compose file |
-| `trigger_file_path` | `/tmp/ha-docker-updater-trigger` | File written by HA to signal an update |
-| `prune_images` | `true` | Remove old Docker images after update |
+| `ha_service_name` | `homeassistant` | Service name for Home Assistant in the Compose file |
+| `trigger_file_path` | `/tmp/ha-docker-updater-trigger` | Path written by HA to signal an update; must be volume-mounted |
+| `prune_images` | `true` | Run `docker image prune -af` after a successful update |
 | `scan_interval` | `3600` | Seconds between GitHub version checks (300–86400) |
 
 ---
@@ -189,8 +223,11 @@ All options are adjustable post-setup via **Settings → Devices & Services → 
 
 - The trigger file uses a **magic string** (`HA_DOCKER_UPDATER_REQUESTED`) that the watcher validates before acting. Stray or empty files are silently ignored.
 - A **lock file** prevents concurrent update runs.
-- The trigger file is **deleted immediately** after validation so a watcher restart cannot re-trigger an update.
-- The systemd service runs as **your user** (not root). Ensure your user is in the `docker` group: `sudo usermod -aG docker pi`.
+- The trigger file is **deleted immediately** after validation, so a watcher restart cannot re-trigger an update.
+- The systemd service runs as **your user** (not root). Ensure your user is in the `docker` group:
+  ```bash
+  sudo usermod -aG docker pi
+  ```
 - For tighter security, replace the shared `/tmp` mount with a dedicated directory owned by your HA user.
 
 ---
@@ -207,21 +244,26 @@ All options are adjustable post-setup via **Settings → Devices & Services → 
 - Check the updater log: `tail -f /home/pi/homeassistant/ha-docker-updater.log`
 
 **"Trigger file directory does not exist" error in HA setup**
-- The path you entered is not accessible inside the container.
+- The path you entered is not accessible from inside the container.
 - Verify the volume mount in `docker-compose.yml` and restart HA.
 
-**docker compose pull fails**
+**`docker compose pull` fails**
 - Check network connectivity from the host.
-- Run `docker compose pull homeassistant` manually to see the error.
+- Run `docker compose pull homeassistant` manually to see the full error output.
+
+**Watcher service fails to start**
+- Check `journalctl -u ha-docker-updater-watcher -n 50` for errors.
+- Confirm the scripts are executable: `ls -la /usr/local/bin/ha-docker-updater*.sh`
+- Confirm your user is in the `docker` group: `groups pi`
 
 ---
 
 ## Complementary Projects
 
-This integration is designed to complement the **Green Button Import** custom component, sharing the same code style, logging conventions, coordinator pattern, and config-flow structure. Both components can be managed together in your HA instance.
+This integration is designed to complement the **[Green Button Energy Import](https://github.com/cskolny/ha-green-button-energy)** custom component, sharing the same code style, logging conventions, coordinator pattern, and config-flow structure. Both components can be managed together in your HA instance.
 
 ---
 
 ## License
 
-MIT — see LICENSE file.
+MIT License — see [LICENSE](LICENSE) for details.
