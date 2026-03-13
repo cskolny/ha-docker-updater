@@ -1,7 +1,7 @@
 {
   "domain": "ha_docker_updater",
   "name": "HA Docker Updater",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "documentation": "https://github.com/cskolny/ha-docker-updater",
   "issue_tracker": "https://github.com/cskolny/ha-docker-updater/issues",
   "codeowners": ["@cskolny"],

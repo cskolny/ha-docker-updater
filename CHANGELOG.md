@@ -5,7 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.0] - 2026-03-11
+## [1.1.0] - 2026-03-13
+
+### Fixed
+- **`_delayed_refresh` exception safety** — the post-install coordinator
+  refresh is now wrapped in `try/finally` so `_attr_in_progress` is always
+  cleared and the spinner never gets permanently stuck, even if the refresh
+  itself raises (e.g. network down immediately after container restart).
+- **Post-install poll delay increased to 120 s** — the previous 60 s window
+  was shorter than the time HA typically takes to restart after a
+  `docker compose up --force-recreate`, which could cause the entity to appear
+  unavailable instead of "up to date" on the first check.
+- **Orphaned lock file no longer blocks future updates** — the watcher now
+  reads the PID from the lock file and checks whether that process is still
+  alive (`kill -0`). A stale lock left behind by a SIGKILL'd process is
+  removed automatically rather than silently blocking all subsequent updates.
+- **`async_get_options_flow` no longer passes `config_entry` to `OptionsFlow`
+  constructor** — the base class provides `self.config_entry` directly in
+  HA 2025.12+; passing it as an argument was a no-op that relied on silent
+  ignore behaviour and has been removed.
+- **Dedicated HTTP 404 handler in coordinator** — a 404 from the GitHub API
+  now raises `UpdateFailed` with a clear message pointing to `REPO_API_URL`
+  instead of the generic "unexpected status" error.
+- **`--remove-orphans` removed from `docker compose up`** — the flag was
+  silently stopping and removing sibling containers (e.g. Mosquitto, Zigbee2MQTT)
+  that share the same Compose project. Only the `homeassistant` service is now
+  touched during an update.
+- **Rate-limit cached data marked with `_from_cache: True`** — when the GitHub
+  API rate limit is nearly exhausted and stale coordinator data is returned,
+  the dict now carries `_from_cache: True` so log readers can tell that
+  `installed_version` and `latest_version` may be outdated.
+- **`deploy.sh` manifest version stamp uses `python3` instead of `sed`** —
+  the previous `sed` regex silently did nothing if `manifest.json` was
+  reformatted. The new approach parses and rewrites the JSON correctly
+  regardless of whitespace or field ordering.
+
+## [1.0.0] - 2026-03-10
 
 ### Changed
 - **`packaging` dependency removed** — version comparison now uses a stdlib
@@ -35,8 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Earlier versions are not supported.
 - **`hacs.json` added** — enables future HACS submission with correct domain
   (`update`), `iot_class` (`cloud_polling`), and minimum HA version.
-
-## [1.0.0] - 2026-03-10
 
 ### Added
 - Initial release.

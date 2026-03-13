@@ -103,11 +103,9 @@ log_info "Image pull completed successfully."
 
 # ── Step 2: Recreate the container ───────────────────────────────────────────
 log_info "Step 2/3 — Recreating container for service '${HA_SERVICE_NAME}'..."
-# --force-recreate  : rebuild even if config is unchanged (use new image)
-# --remove-orphans  : clean up containers for removed services
+# --force-recreate : rebuild even if config is unchanged (picks up the new image)
 if ! ${DOCKER_COMPOSE_CMD} -f "${COMPOSE_FILE}" up -d \
         --force-recreate \
-        --remove-orphans \
         "${HA_SERVICE_NAME}"; then
     log_error "docker compose up failed. Review 'docker compose logs ${HA_SERVICE_NAME}'."
     exit 1

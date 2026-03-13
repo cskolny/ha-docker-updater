@@ -143,7 +143,7 @@ class HADockerUpdaterConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> HADockerUpdaterOptionsFlow:
         """Return the options flow handler."""
-        return HADockerUpdaterOptionsFlow(config_entry)
+        return HADockerUpdaterOptionsFlow()
 
 
 # ── Options flow ──────────────────────────────────────────────────────────────

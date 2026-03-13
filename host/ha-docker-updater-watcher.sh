@@ -79,11 +79,18 @@ while true; do
         rm -f "${TRIGGER_FILE}"
         log_info "Trigger file removed. Proceeding with update."
 
-        # Enforce single-run lock
+        # Enforce single-run lock — validate the PID is still alive so a
+        # crashed watcher or SIGKILL'd updater doesn't leave a permanent block.
         if [[ -f "${LOCK_FILE}" ]]; then
-            log_warn "Update already in progress (lock file exists: ${LOCK_FILE}). Skipping."
-            sleep "${POLL_INTERVAL}"
-            continue
+            lock_pid="$(cat "${LOCK_FILE}" 2>/dev/null || echo "")"
+            if [[ -n "${lock_pid}" ]] && kill -0 "${lock_pid}" 2>/dev/null; then
+                log_warn "Update already in progress (PID ${lock_pid} is running). Skipping."
+                sleep "${POLL_INTERVAL}"
+                continue
+            else
+                log_warn "Stale lock file found (PID '${lock_pid}' is not running). Removing and proceeding."
+                rm -f "${LOCK_FILE}"
+            fi
         fi
 
         # Acquire lock

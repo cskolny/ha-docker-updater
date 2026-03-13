@@ -54,7 +54,7 @@ from .coordinator import HADockerUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-_POST_INSTALL_POLL_DELAY = 60
+_POST_INSTALL_POLL_DELAY = 120
 
 UPDATE_ENTITY_DESCRIPTION = UpdateEntityDescription(
     key="ha_docker_update",
@@ -211,11 +211,19 @@ class HADockerUpdateEntity(CoordinatorEntity[HADockerUpdateCoordinator], UpdateE
             self.async_write_ha_state()
             return
 
+        # Schedule a deferred refresh so the entity reflects the new version
+        # once HA has restarted.  If the host-side update fails silently (e.g.
+        # the watcher isn't running), _attr_in_progress is still cleared after
+        # the delay and the entity returns to "Update available" — no spinner
+        # gets permanently stuck.  The try/finally guarantees the flag clears
+        # even if the coordinator refresh itself raises.
         async def _delayed_refresh() -> None:
             await asyncio.sleep(_POST_INSTALL_POLL_DELAY)
-            await self.coordinator.async_request_refresh()
-            self._attr_in_progress = False
-            self.async_write_ha_state()
+            try:
+                await self.coordinator.async_request_refresh()
+            finally:
+                self._attr_in_progress = False
+                self.async_write_ha_state()
 
         self.hass.async_create_task(_delayed_refresh())
 

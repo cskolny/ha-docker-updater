@@ -120,14 +120,22 @@ class HADockerUpdateCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                             LOG_PREFIX,
                             rate_remaining,
                         )
-                        # Return stale data rather than an error to keep entity available
+                        # Return stale data rather than an error to keep entity available.
+                        # _from_cache=True is recorded so log readers can tell the
+                        # installed_version and latest_version fields may be outdated.
                         if self.data:
-                            return {**self.data, "rate_limit_remaining": rate_remaining}
+                            return {**self.data, "rate_limit_remaining": rate_remaining, "_from_cache": True}
 
                     if resp.status == 403:
                         raise UpdateFailed(
                             f"{LOG_PREFIX} GitHub API rate limited (HTTP 403). "
                             "Will retry at next scheduled interval."
+                        )
+
+                    if resp.status == 404:
+                        raise UpdateFailed(
+                            f"{LOG_PREFIX} GitHub release endpoint not found (HTTP 404). "
+                            "Check REPO_API_URL in const.py."
                         )
 
                     if resp.status != 200:
