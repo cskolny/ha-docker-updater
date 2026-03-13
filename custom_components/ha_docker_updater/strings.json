@@ -54,7 +54,7 @@
   "entity": {
     "update": {
       "ha_docker_update": {
-        "name": "HA Docker Update",
+        "name": "Update",
         "state_attributes": {
           "github_rate_limit_remaining": {
             "name": "GitHub API rate limit remaining"

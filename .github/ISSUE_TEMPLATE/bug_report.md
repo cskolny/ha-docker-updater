@@ -42,7 +42,7 @@ paste log output here
 Paste the output of the following command from your Raspberry Pi:
 
 ```bash
-sudo systemctl status ha-docker-update-watcher.service
+sudo systemctl status ha-docker-updater-watcher.service
 ```
 
 ```

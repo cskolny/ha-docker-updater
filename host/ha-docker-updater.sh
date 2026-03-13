@@ -3,7 +3,7 @@
 # ha-docker-updater.sh
 # Host-side script to update the Home Assistant Docker container.
 #
-# Called by: ha-docker-update-watcher.service (systemd)
+# Called by: ha-docker-updater-watcher.service (systemd)
 # Never called directly by the HA container.
 #
 # Usage: ha-docker-updater.sh [--compose-dir DIR] [--compose-file FILE]

@@ -11,13 +11,21 @@ This integration operates in two parts:
 
 2. **Host-side watcher** (runs on the Raspberry Pi / Docker host)
    - ``ha-docker-updater-watcher.sh``     — performs docker-compose pull + up
-   - ``ha-docker-update-watcher.service`` — systemd unit that watches for the
+   - ``ha-docker-updater-watcher.service`` — systemd unit that watches for the
                                             trigger file and calls the script
 
 The HA component never calls docker-compose directly — it cannot, because
 restarting the container would kill the running process.  Instead it writes a
 small trigger file to a path that is volume-mounted on the host.  The host
 watcher detects that file, executes the update, and removes the trigger.
+
+Device registry note
+────────────────────
+This integration deliberately does NOT create a device entry.  Any integration
+that creates a device during config-flow setup causes the HA frontend to show
+a "Device created" dialog.  Since this integration has no physical hardware to
+represent, we skip device creation entirely.  The update entity is accessible
+directly under Settings → Devices & Services → HA Docker Updater.
 """
 
 from __future__ import annotations
@@ -26,7 +34,6 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DATA_COORDINATOR, DOMAIN, LOG_PREFIX
 from .coordinator import HADockerUpdateCoordinator

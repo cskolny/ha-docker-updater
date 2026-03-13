@@ -52,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   solves the fundamental problem that a container cannot restart itself.
 - **Atomic trigger file writes** — uses write-then-rename (`os.replace`) so the
   host watcher never sees a partially-written file.
-- **Magic string validation** — the trigger file contains `HA_DOCKER_UPDATE_REQUESTED`;
+- **Magic string validation** — the trigger file contains `HA_DOCKER_UPDATER_REQUESTED`;
   the watcher validates this before acting to prevent stray files from triggering
   unintended updates.
 - **Lock file** on the host watcher prevents concurrent update runs.
@@ -72,7 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docker image prune -af` after a successful update to reclaim disk space.
 - **Structured timestamped logging** on both the HA component and the host-side
   scripts, written to `ha-docker-updater.log` in the Compose directory.
-- **systemd service** (`ha-docker-update-watcher.service`) with resource limits,
+- **systemd service** (`ha-docker-updater-watcher.service`) with resource limits,
   correct Docker socket dependencies, and `Restart=on-failure`.
 - **`deploy.sh`** — one-command deployment script (modelled on the Green Button
   Energy Import project) supporting `--skip-restart`, `--component-only`, and

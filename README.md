@@ -23,11 +23,11 @@ This integration uses a **two-part design** to safely update a running Docker co
 │  │       trigger file              │  │  volume mount         │
 │  └─────────────────────────────────┘  │                       │
 │                                       ▼                        │
-│  /tmp/ha-docker-update-trigger  ◄─────┘                       │
+│  /tmp/ha-docker-updater-trigger  ◄─────┘                       │
 │           │                                                     │
 │           │  (inotify poll every 5s)                           │
 │           ▼                                                     │
-│  ha-docker-update-watcher.sh (systemd service)                 │
+│  ha-docker-updater-watcher.sh (systemd service)                 │
 │    1. Validates magic string                                    │
 │    2. Removes trigger file                                      │
 │    3. Acquires lock                                             │
@@ -95,7 +95,7 @@ When `docker compose up --force-recreate` runs, it **stops and replaces the runn
    - **Docker Compose directory**: `/home/pi/homeassistant`
    - **Compose filename**: `docker-compose.yml`
    - **HA service name**: `homeassistant`
-   - **Trigger file path**: `/tmp/ha-docker-update-trigger`
+   - **Trigger file path**: `/tmp/ha-docker-updater-trigger`
    - **Prune images**: Enabled (recommended)
    - **Scan interval**: `3600` (1 hour)
 
@@ -108,24 +108,24 @@ Run these commands on your **Raspberry Pi / Docker host** (not inside the contai
 ```bash
 # 1. Copy scripts to system bin
 sudo cp host/ha-docker-updater.sh         /usr/local/bin/
-sudo cp host/ha-docker-update-watcher.sh  /usr/local/bin/
+sudo cp host/ha-docker-updater-watcher.sh  /usr/local/bin/
 sudo chmod +x /usr/local/bin/ha-docker-updater.sh
-sudo chmod +x /usr/local/bin/ha-docker-update-watcher.sh
+sudo chmod +x /usr/local/bin/ha-docker-updater-watcher.sh
 
 # 2. Install the systemd unit
-sudo cp host/ha-docker-update-watcher.service /etc/systemd/system/
+sudo cp host/ha-docker-updater-watcher.service /etc/systemd/system/
 
 # 3. Edit the service file to match your username and paths
-sudo nano /etc/systemd/system/ha-docker-update-watcher.service
+sudo nano /etc/systemd/system/ha-docker-updater-watcher.service
 
 # 4. Enable and start
 sudo systemctl daemon-reload
-sudo systemctl enable ha-docker-update-watcher.service
-sudo systemctl start  ha-docker-update-watcher.service
+sudo systemctl enable ha-docker-updater-watcher.service
+sudo systemctl start  ha-docker-updater-watcher.service
 
 # 5. Verify
-sudo systemctl status ha-docker-update-watcher.service
-journalctl -u ha-docker-update-watcher.service -f
+sudo systemctl status ha-docker-updater-watcher.service
+journalctl -u ha-docker-updater-watcher.service -f
 ```
 
 ---
@@ -169,7 +169,7 @@ All options are adjustable post-setup via **Settings → Devices & Services → 
 | `compose_dir` | `/home/pi/homeassistant` | Host-side directory with your `docker-compose.yml` |
 | `compose_file` | `docker-compose.yml` | Compose filename |
 | `ha_service_name` | `homeassistant` | Service name in the Compose file |
-| `trigger_file_path` | `/tmp/ha-docker-update-trigger` | File written by HA to signal an update |
+| `trigger_file_path` | `/tmp/ha-docker-updater-trigger` | File written by HA to signal an update |
 | `prune_images` | `true` | Remove old Docker images after update |
 | `scan_interval` | `3600` | Seconds between GitHub version checks (300–86400) |
 
@@ -181,13 +181,13 @@ All options are adjustable post-setup via **Settings → Devices & Services → 
 |---|---|
 | HA logs (`Settings → System → Logs`) | Coordinator fetch results, trigger write status |
 | `/home/pi/homeassistant/ha-docker-updater.log` | Host-side watcher and updater script output |
-| `journalctl -u ha-docker-update-watcher` | systemd service lifecycle events |
+| `journalctl -u ha-docker-updater-watcher` | systemd service lifecycle events |
 
 ---
 
 ## Security Considerations
 
-- The trigger file uses a **magic string** (`HA_DOCKER_UPDATE_REQUESTED`) that the watcher validates before acting. Stray or empty files are silently ignored.
+- The trigger file uses a **magic string** (`HA_DOCKER_UPDATER_REQUESTED`) that the watcher validates before acting. Stray or empty files are silently ignored.
 - A **lock file** prevents concurrent update runs.
 - The trigger file is **deleted immediately** after validation so a watcher restart cannot re-trigger an update.
 - The systemd service runs as **your user** (not root). Ensure your user is in the `docker` group: `sudo usermod -aG docker pi`.
@@ -202,7 +202,7 @@ All options are adjustable post-setup via **Settings → Devices & Services → 
 - Verify your Pi has outbound HTTPS access to `api.github.com`.
 
 **Trigger file is written but nothing happens**
-- Confirm the watcher service is running: `sudo systemctl status ha-docker-update-watcher`
+- Confirm the watcher service is running: `sudo systemctl status ha-docker-updater-watcher`
 - Confirm `/tmp` (or your custom path) is volume-mounted in `docker-compose.yml`.
 - Check the updater log: `tail -f /home/pi/homeassistant/ha-docker-updater.log`
 

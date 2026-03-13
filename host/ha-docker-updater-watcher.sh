@@ -1,16 +1,16 @@
 #!/bin/bash
 # =============================================================================
-# ha-docker-update-watcher.sh
+# ha-docker-updater-watcher.sh
 # Host-side daemon loop — watches for the trigger file written by the HA
 # Docker Updater custom component, then calls ha-docker-updater.sh.
 #
-# Designed to be run as a systemd service (see ha-docker-update-watcher.service).
+# Designed to be run as a systemd service (see ha-docker-updater-watcher.service).
 # Should NOT be called manually in normal operation.
 #
 # Security model
 # ──────────────
 #  1. The trigger file must contain the magic string defined in the HA component
-#     (TRIGGER_FILE_MAGIC = "HA_DOCKER_UPDATE_REQUESTED") to prevent accidental
+#     (TRIGGER_FILE_MAGIC = "HA_DOCKER_UPDATER_REQUESTED") to prevent accidental
 #     or unauthorised triggers from stray files.
 #  2. Only one update can run at a time; a lock file prevents concurrent runs.
 #  3. The trigger file is removed immediately after it is validated so a
@@ -20,12 +20,12 @@
 set -euo pipefail
 
 # ── Configuration (override via environment or edit here) ─────────────────────
-TRIGGER_FILE="${HA_UPDATER_TRIGGER_FILE:-/tmp/ha-docker-update-trigger}"
+TRIGGER_FILE="${HA_UPDATER_TRIGGER_FILE:-/tmp/ha-docker-updater-trigger}"
 UPDATER_SCRIPT="${HA_UPDATER_SCRIPT:-/usr/local/bin/ha-docker-updater.sh}"
 LOG_FILE="${HA_UPDATER_LOG_FILE:-/home/pi/homeassistant/ha-docker-updater.log}"
 LOCK_FILE="${HA_UPDATER_LOCK_FILE:-/tmp/ha-docker-updater.lock}"
 POLL_INTERVAL="${HA_UPDATER_POLL_INTERVAL:-5}"   # seconds between trigger checks
-MAGIC_STRING="HA_DOCKER_UPDATE_REQUESTED"
+MAGIC_STRING="HA_DOCKER_UPDATER_REQUESTED"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 _log() {

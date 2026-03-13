@@ -1,0 +1,44 @@
+[Unit]
+Description=HA Docker Updater Watcher
+Documentation=https://github.com/cskolny/ha-docker-updater
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+
+# Script paths — must match what deploy.sh installs to /usr/local/bin/
+ExecStart=/usr/local/bin/ha-docker-updater-watcher.sh
+ExecStop=/bin/kill -TERM $MAINPID
+
+# Environment overrides (edit these to match your setup if non-default)
+Environment=HA_UPDATER_TRIGGER_FILE=/tmp/ha-docker-updater-trigger
+Environment=HA_UPDATER_SCRIPT=/usr/local/bin/ha-docker-updater.sh
+Environment=HA_UPDATER_LOG_FILE=/home/pi/homeassistant/ha-docker-updater.log
+Environment=HA_UPDATER_LOCK_FILE=/tmp/ha-docker-updater.lock
+Environment=HA_UPDATER_POLL_INTERVAL=5
+Environment=HA_UPDATER_COMPOSE_DIR=/home/pi/homeassistant
+Environment=HA_UPDATER_COMPOSE_FILE=docker-compose.yml
+Environment=HA_UPDATER_SERVICE_NAME=homeassistant
+Environment=HA_UPDATER_PRUNE=true
+
+# Restart the watcher if it crashes, but don't spin-loop
+Restart=on-failure
+RestartSec=10s
+
+# Resource limits — keep the watcher lightweight
+MemoryMax=64M
+CPUQuota=10%
+
+# Give the process time to shut down cleanly
+TimeoutStopSec=30
+
+# Ensure stdout/stderr go to journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ha-docker-updater-watcher
+
+[Install]
+WantedBy=multi-user.target

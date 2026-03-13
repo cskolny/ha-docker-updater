@@ -1,7 +1,7 @@
 {
   "domain": "ha_docker_updater",
   "name": "HA Docker Updater",
-  "version": "1.1.0",
+  "version": "1.0.0",
   "documentation": "https://github.com/cskolny/ha-docker-updater",
   "issue_tracker": "https://github.com/cskolny/ha-docker-updater/issues",
   "codeowners": ["@cskolny"],
@@ -10,6 +10,8 @@
   "after_dependencies": [],
   "iot_class": "cloud_polling",
   "integration_type": "service",
+  "single_config_entry": true,
   "config_flow": true,
-  "quality_scale": "silver"
+  "quality_scale": "silver",
+  "min_ha_version": "2025.12.0"
 }

@@ -6,6 +6,21 @@ This module is intentionally thin — all version-fetching logic lives in
   1. Reflecting coordinator state in the HA UI.
   2. On install: writing the trigger file that the host-side watcher detects.
   3. Surfacing meaningful error states rather than silently failing.
+
+Naming / device design
+──────────────────────
+This integration does NOT register a device.  The HA frontend shows a
+"Device created" dialog after *every* config flow that produces a new device
+entry — and for UpdateEntity this dialog is especially intrusive.  By omitting
+``device_info`` entirely the dialog never appears.
+
+Without a device the naming rules are:
+  ``has_entity_name = True``  +  ``name = "Home Assistant Core Update"``
+  →  friendly_name  = "Home Assistant Core Update"
+  →  entity_id      = update.home_assistant_core_update
+
+The ``title`` property (separate from entity name) is shown inside the update
+more-info dialog as the software title line.
 """
 
 from __future__ import annotations
@@ -24,11 +39,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_TRIGGER_FILE_PATH,
     DATA_COORDINATOR,
     DEFAULT_TRIGGER_FILE,
+    DEVICE_NAME,
     DOMAIN,
     LOG_PREFIX,
     TRIGGER_FILE_MAGIC,
@@ -37,13 +54,13 @@ from .coordinator import HADockerUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# ── Update interval after a successful install trigger (seconds) ──────────────
 _POST_INSTALL_POLL_DELAY = 60
 
 UPDATE_ENTITY_DESCRIPTION = UpdateEntityDescription(
     key="ha_docker_update",
-    name="HA Docker Update",
-    icon="mdi:docker",
+    name="Home Assistant Core Update",
+    icon="mdi:home-assistant",
+    translation_key=None,
 )
 
 
@@ -58,15 +75,12 @@ async def async_setup_entry(
 
 
 class HADockerUpdateEntity(CoordinatorEntity[HADockerUpdateCoordinator], UpdateEntity):
-    """Represents the Home Assistant Docker container update state.
-
-    Inheriting from ``CoordinatorEntity`` means HA automatically:
-      - Calls ``coordinator.async_request_refresh()`` on the configured interval.
-      - Marks the entity unavailable when the coordinator raises ``UpdateFailed``.
-      - Handles state writes after each successful coordinator refresh.
-    """
+    """Represents the Home Assistant Docker container update state."""
 
     entity_description = UPDATE_ENTITY_DESCRIPTION
+    # has_entity_name=False (default) means name is the full friendly name,
+    # not a suffix appended to a device name.
+    _attr_has_entity_name = False
 
     def __init__(
         self,
@@ -76,8 +90,10 @@ class HADockerUpdateEntity(CoordinatorEntity[HADockerUpdateCoordinator], UpdateE
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = f"{DOMAIN}_update"
-        self._attr_has_entity_name = True
-        self._attr_supported_features = UpdateEntityFeature.INSTALL
+        self._attr_supported_features = (
+            UpdateEntityFeature.INSTALL
+            | UpdateEntityFeature.BACKUP
+        )
         self._attr_in_progress = False
         self._trigger_path: str = entry.options.get(
             CONF_TRIGGER_FILE_PATH,
@@ -88,33 +104,70 @@ class HADockerUpdateEntity(CoordinatorEntity[HADockerUpdateCoordinator], UpdateE
 
     @property
     def installed_version(self) -> str | None:
-        """Currently running HA version."""
         if self.coordinator.data:
             return self.coordinator.data.get("installed_version")
         return None
 
     @property
     def latest_version(self) -> str | None:
-        """Latest available HA version from GitHub."""
         if self.coordinator.data:
             return self.coordinator.data.get("latest_version")
         return None
 
     @property
     def release_url(self) -> str | None:
-        """Direct link to the GitHub release notes."""
         if self.coordinator.data:
             return self.coordinator.data.get("release_url")
         return None
 
     @property
+    def title(self) -> str | None:
+        """Software title shown inside the update more-info dialog."""
+        return DEVICE_NAME  # "Home Assistant Core"
+
+    @property
+    def release_summary(self) -> str | None:
+        """Short summary shown when an update is available."""
+        if not self.coordinator.data:
+            return None
+        if not self.coordinator.data.get("update_available"):
+            return None
+        latest = self.coordinator.data.get("latest_version")
+        if not latest:
+            return None
+        summary = (
+            f"Home Assistant {latest} is available. "
+            "See the release notes for details before updating."
+        )
+        last_backup = self._get_last_backup_summary()
+        if last_backup:
+            summary += f"\n\n{last_backup}"
+        return summary
+
+    def _get_last_backup_summary(self) -> str | None:
+        try:
+            backup_states = self.hass.states.async_all("backup")
+            if not backup_states:
+                return None
+            latest = max(backup_states, key=lambda s: s.last_changed)
+            delta = dt_util.utcnow() - latest.last_changed
+            hours = int(delta.total_seconds() // 3600)
+            if hours < 1:
+                age = "less than 1 hour ago"
+            elif hours == 1:
+                age = "1 hour ago"
+            else:
+                age = f"{hours} hours ago"
+            return f"Last automatic backup {age}."
+        except Exception:  # noqa: BLE001
+            return None
+
+    @property
     def available(self) -> bool:
-        """Mark entity unavailable when coordinator has never succeeded."""
         return self.coordinator.last_update_success
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose diagnostic attributes visible in Developer Tools → States."""
         attrs: dict[str, Any] = {}
         if self.coordinator.data:
             rate = self.coordinator.data.get("rate_limit_remaining")
@@ -131,48 +184,33 @@ class HADockerUpdateEntity(CoordinatorEntity[HADockerUpdateCoordinator], UpdateE
         backup: bool,
         **kwargs: Any,
     ) -> None:
-        """Trigger the host-side watcher to perform the Docker update.
-
-        The HA container cannot restart itself via docker-compose — doing so
-        would kill the process mid-execution.  Instead we write a trigger file
-        to a path that is volume-mounted on the host.  A lightweight systemd
-        service (``ha-docker-update-watcher.service``) running on the host
-        detects the file, runs the update, and removes the trigger.
-
-        The trigger file contains a magic string so the watcher can perform a
-        basic authenticity check before acting.
-        """
-        _LOGGER.info(
-            "%s Install requested. Writing trigger file: %s",
-            LOG_PREFIX,
-            self._trigger_path,
-        )
-
+        """Optionally back up, then trigger the host-side watcher to update."""
         self._attr_in_progress = True
         self.async_write_ha_state()
 
+        if backup:
+            _LOGGER.info("%s Backup requested — creating backup before update.", LOG_PREFIX)
+            try:
+                await self.hass.services.async_call("backup", "create", blocking=True)
+                _LOGGER.info("%s Backup completed successfully.", LOG_PREFIX)
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.error("%s Backup failed: %s — aborting update.", LOG_PREFIX, exc)
+                self._attr_in_progress = False
+                self.async_write_ha_state()
+                return
+
+        _LOGGER.info("%s Writing trigger file: %s", LOG_PREFIX, self._trigger_path)
         try:
             await self.hass.async_add_executor_job(
                 self._write_trigger_file, self._trigger_path
             )
-            _LOGGER.info(
-                "%s Trigger file written successfully. "
-                "Host-side watcher will perform the update.",
-                LOG_PREFIX,
-            )
+            _LOGGER.info("%s Trigger file written. Host watcher will perform the update.", LOG_PREFIX)
         except OSError as exc:
-            _LOGGER.error(
-                "%s Failed to write trigger file %r: %s",
-                LOG_PREFIX,
-                self._trigger_path,
-                exc,
-            )
+            _LOGGER.error("%s Failed to write trigger file %r: %s", LOG_PREFIX, self._trigger_path, exc)
             self._attr_in_progress = False
             self.async_write_ha_state()
             return
 
-        # Schedule a coordinator refresh after the container likely restarts.
-        # This gives the watcher ~60 s to act before we poll again.
         async def _delayed_refresh() -> None:
             await asyncio.sleep(_POST_INSTALL_POLL_DELAY)
             await self.coordinator.async_request_refresh()
@@ -185,25 +223,19 @@ class HADockerUpdateEntity(CoordinatorEntity[HADockerUpdateCoordinator], UpdateE
 
     @staticmethod
     def _write_trigger_file(path: str) -> None:
-        """Write the trigger file.  Runs in executor (blocking I/O).
-
-        Uses an atomic write pattern (write-then-rename) so the watcher never
-        sees a partially-written file.
-        """
+        """Atomic trigger file write (write-then-rename)."""
         trigger_dir = os.path.dirname(path)
         if trigger_dir and not os.path.isdir(trigger_dir):
             raise OSError(
                 f"Trigger file directory does not exist: {trigger_dir!r}. "
                 "Ensure the path is volume-mounted from the host."
             )
-
         tmp_path = path + ".tmp"
         try:
             with open(tmp_path, "w", encoding="utf-8") as fh:
                 fh.write(TRIGGER_FILE_MAGIC + "\n")
-            os.replace(tmp_path, path)  # Atomic on POSIX
+            os.replace(tmp_path, path)
         finally:
-            # Clean up temp file if rename failed
             if os.path.exists(tmp_path):
                 try:
                     os.unlink(tmp_path)
