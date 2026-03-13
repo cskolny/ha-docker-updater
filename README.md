@@ -7,6 +7,8 @@
 
 Update your **Home Assistant Docker container** directly from the HA UI — no SSH, no terminal, no manual `docker compose` commands. A new update entity appears in **Settings → System → Updates** alongside HA's own built-in update cards.
 
+![Update Dialog](screenshots/update-dialog.png)
+
 ---
 
 ## How It Works
